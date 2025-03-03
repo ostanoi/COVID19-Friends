@@ -1,0 +1,313 @@
+---
+title: "Mean Negative & Positive Affect in Daily Life During COVID-19 ~ Close Out-Degree * Stressors"
+author: "Ovidia Stanoi"
+date: "2025-02-10"
+output: html_document
+---
+
+### Prepare data for regression analyses. 
+<br>
+
+Remove all data from the global environment.<br>
+
+```{r, message = F, warning = F}
+remove(list=ls()) 
+```
+<br>
+
+Load libraries.<br>
+
+```{r, message = F, warning = F}
+library("tidyverse")
+library("rstanarm")
+library("sjPlot")
+library("brms")
+library("ggpubr")
+```
+<br>
+
+Define directory path.<br>
+
+```{r, message = F, warning = F}
+path <- "~/Dropbox/Psychology_Projects/Close Relations, Affect & Stress During the COVID19 Pandemic"
+```
+<br>
+
+Open dataset.<br>
+
+```{r, message = F, warning = F}
+covid_ema <- read.csv(sprintf("%s/Data/all_data_merged_clean.csv", path)) 
+```
+<br>
+
+Extract for each participant their mean negative and positive affect in the EMA period, as well as their number of close friend prior to the COVID-19 pandemic, their baseline demographic information, COVID-19 living conditions, number of stressors, and EMA completion rates. All these variables will be added in the regression model.<br>
+
+```{r, message = F, warning = F}
+df <- covid_ema %>%
+  group_by(pID) %>%
+  dplyr::summarise(groupID = unique(groupID), 
+            mean_NegativeMood = mean(NegativeMood, na.rm = T),
+            mean_PositiveMood = mean(PositiveMood, na.rm = T),
+            baseline_closest_deg_out_norm = unique(baseline_closest_deg_out_norm),
+            covid_stress_self_nr = unique(covid_stress_self_nr),
+            baseline_income_num = unique(baseline_income_num),
+            baseline_educ_parents_years = unique(baseline_educ_parents_years),
+            baseline_college_year = unique(baseline_college_year),
+            baseline_gender_numeric = unique(baseline_gender_numeric),
+            covid_housing_tension = unique(covid_housing_tension),
+            covid_phys_dist = unique(covid_phys_dist_avg),
+            EMA_completion_rate = unique(EMA_completion_rate))
+```
+<br>
+
+Center continuous predictors around the sample mean and binary variables around zero.<br>
+
+```{r, message = F, warning = F}
+df$baseline_closest_deg_out_norm_c <- df$baseline_closest_deg_out_norm - mean(df$baseline_closest_deg_out_norm, na.rm = T)
+df$covid_stress_self_nr_c <- df$covid_stress_self_nr - mean(df$covid_stress_self_nr, na.rm = T)
+df$baseline_income_num_c <- df$baseline_income_num - mean(df$baseline_income_num, na.rm = T)
+df$baseline_educ_parents_years_c <- df$baseline_educ_parents_years - mean(df$baseline_educ_parents_years, na.rm = T)
+df$baseline_college_year_c <- df$baseline_college_year - mean(df$baseline_college_year, na.rm = T)
+df$baseline_gender_numeric_c <- df$baseline_gender_numeric - .5
+df$covid_housing_tension_c <- df$covid_housing_tension - mean(df$covid_housing_tension, na.rm = T)
+df$covid_phys_dist_c  <- df$covid_phys_dist - mean(df$covid_phys_dist, na.rm = T)
+df$EMA_completion_rate_c  <- df$EMA_completion_rate - mean(df$EMA_completion_rate, na.rm = T)
+```
+<br>
+
+### Run regression models
+<br>
+
+##### Model 1: Outcome Variable = Negative Affect 
+<br>
+
+**RQ**: Do close friendships in college buffer against the negative impact of COVID-19-related stressors on negative affect?<br>
+
+Run regression analysis 1: mean negative affect ~ close out-degree * number of COVID-19 stressors.<br>
+
+```{r, message = F, warning = F}
+options(mc.cores = parallel::detectCores())
+f1 <- stan_glmer(mean_NegativeMood ~ baseline_closest_deg_out_norm_c * covid_stress_self_nr_c +
+                   baseline_income_num_c + baseline_educ_parents_years_c + baseline_college_year_c +
+                   baseline_gender_numeric_c + covid_housing_tension_c + covid_phys_dist_c + 
+                   EMA_completion_rate_c + (1 | groupID),
+                  data = df, seed = 123)
+save(f1, file = sprintf("%s/Models/1. Mean-NegAff_Out-Degree_Self-Stressors.RData", path))
+```
+<br>
+
+##### Model 2: Outcome Variable = Positive Affect 
+<br>
+
+**RQ**: Do close friendships in college buffer against the negative impact of COVID-19-related stressors on positive affect?<br>
+
+Run regression analysis 2: mean positive affect ~ close out-degree * number of COVID-19 stressors.<br> 
+
+```{r, message = F, warning = F}
+options(mc.cores = parallel::detectCores())
+f2 <- stan_glmer(mean_PositiveMood ~ baseline_closest_deg_out_norm_c * covid_stress_self_nr_c +
+                   baseline_income_num_c + baseline_educ_parents_years_c + baseline_college_year_c +
+                   baseline_gender_numeric_c + covid_housing_tension_c + covid_phys_dist_c + 
+                   EMA_completion_rate_c + (1 | groupID),
+                  data = df, seed = 123)
+save(f2, file = sprintf("%s/Models/1. Mean-PosAff_Out-Degree_Self-Stressors.RData", path))
+```
+<br>
+
+### Summarize results
+<br>
+
+Create a table that presents the parameter estimates from the two models together.<br>
+
+```{r, message = F, warning = F}
+tab_model(f1, f2, show.se = TRUE,
+          show.r2 = TRUE, 
+          dv.labels = c("Mean Negative Affect",
+                        "Mean Positive Affect "),
+          pred.labels = c("(Intercept)", 
+                          "Close Out-Degree Prior to COVID-19",
+                          "Number of COVID-19-related Stressors", 
+                          "HH Income",
+                          "Parents' Education",
+                          "Year in College",
+                          "Female",
+                          "HH Tension",
+                          "Physical Distance",
+                          "EMA Completion Rate",
+                          "Out-Degree * Number of Stressors Interaction"),
+          file = sprintf("%s/Tables/1. Mean-NegAff-PosAff_Out-Degree_Self-Stressors.html", path))
+```
+<br>
+
+Below, extract the proportion of the posterior distribution that is above or below zero for each predictor of interest separately for the two regression model (negative and positive affect outcome variables).<br>
+<br>
+
+##### Model 1: Outcome Variable = Negative Affect 
+<br>
+
+Extract the posterior distributions of the parameter estimates from the first regression model.<br>
+
+```{r, message = F, warning = F}
+posterior <- as.data.frame(as.matrix(f1))
+```
+<br>
+
+Extract the number of individual points included in a posterior distribution.<br>
+
+```{r, message = F, warning = F}
+n <- length(posterior$baseline_closest_deg_out_norm_c)
+n
+```
+<br>
+
+Calculate the proportion of the posterior distribution that is lower than 0 for the main effect of close out-degree on mean negative affect.<br>
+
+```{r, message = F, warning = F}
+round(length(which(posterior$baseline_closest_deg_out_norm_c < 0))/n*100,1)
+```
+<br>
+
+Calculate the proportion of the posterior distribution that is higher than 0 for the main effect of number of stressors on mean negative affect.<br> 
+
+```{r, message = F, warning = F}
+round(length(which(posterior$covid_stress_self_nr_c > 0))/n*100,1)
+```
+<br>
+
+Calculate the proportion of the posterior distribution that is lower than 0 for the interaction effect between participants' close out-degree and their number of stressors on mean negative affect.<br> 
+
+```{r, message = F, warning = F}
+round(length(which(posterior$`baseline_closest_deg_out_norm_c:covid_stress_self_nr_c` < 0))/n*100,1)
+```
+<br>
+
+Calculate the total $R^2$ for the model.<br>
+
+```{r, message = F, warning = F}
+round(mean(bayes_R2(f1)),2)
+```
+<br>
+
+##### Model 2: Outcome Variable = Positive Affect 
+<br>
+
+Extract the posterior distributions of the parameter estimates from the first regression model.<br>
+
+```{r, message = F, warning = F}
+posterior <- as.data.frame(as.matrix(f2))
+```
+<br>
+
+Extract the number of individual points included in a posterior distribution.<br>
+
+```{r, message = F, warning = F}
+n <- length(posterior$baseline_closest_deg_out_norm_c)
+n
+```
+<br>
+
+Calculate the proportion of the posterior distribution that is higher than 0 for the main effect of close out-degree on mean positive affect.<br>
+
+```{r, message = F, warning = F}
+round(length(which(posterior$baseline_closest_deg_out_norm_c > 0))/n*100,1)
+```
+<br>
+
+Calculate the proportion of the posterior distribution that is lower than 0 for the main effect of number of stressors on mean positive affect.<br> 
+
+```{r, message = F, warning = F}
+round(length(which(posterior$covid_stress_self_nr_c < 0))/n*100,1)
+```
+<br>
+
+Calculate the proportion of the posterior distribution that is higher than 0 for the interaction effect between participants' close out-degree and their number of stressors on mean positive affect.<br> 
+
+```{r, message = F, warning = F}
+round(length(which(posterior$`baseline_closest_deg_out_norm_c:covid_stress_self_nr_c` > 0))/n*100,1)
+```
+<br>
+
+Calculate the total $R^2$ for the model.<br>
+
+```{r, message = F, warning = F}
+round(mean(bayes_R2(f2)),2)
+```
+<br>
+
+### General Linear Hypothesis Tests (GLHT)
+<br>
+
+##### Model 1: Outcome Variable = Negative Affect 
+<br>
+
+Test the hypothesis: does the slope representing the relationship between participants' number of stressors and mean negative affect differ from zero for 1) students with few friends at school (1.5 SD below mean), 2) students with many friends at school (1.5 SD above mean)?<br>
+
+```{r, message = F, warning = F}
+# Calculate mean close out-degree  +/-1.5SD
+lw_1.5sd <- round(-1.5*sd(df$baseline_closest_deg_out_norm_c, na.rm = T),3)
+lw_1.5sd
+
+up_1.5sd <- round(+1.5*sd(df$baseline_closest_deg_out_norm_c, na.rm = T),3)
+up_1.5sd
+
+# Define the number of draws from the posterior distribution
+n <- 4000
+```
+<br>
+
+Test the hypothesis for those with few close friends first.<br>
+
+```{r, message = F, warning = F}
+my_hyp_lw <- hypothesis(f1, "1*covid_stress_self_nr_c +
+                      -14.884*baseline_closest_deg_out_norm_c:covid_stress_self_nr_c = 0")
+p <- my_hyp_lw$samples
+df_hyp <- my_hyp_lw$hypothesis[ ,2:5] %>% 
+  mutate(Prop.Above.Zero = length(which(p$H1 > 0))/n) %>% 
+  mutate_if(is.numeric, funs(round(., digits = 2))) 
+df_hyp
+```
+<br>
+
+Test the hypothesis for those with many close friends.<br>
+
+```{r, message = F, warning = F}
+my_hyp_up <- hypothesis(f1, "1*covid_stress_self_nr_c +
+                      +14.884*baseline_closest_deg_out_norm_c:covid_stress_self_nr_c = 0")
+p <- my_hyp_up$samples
+df_hyp <- my_hyp_up$hypothesis[ ,2:5] %>% 
+  mutate(Prop.Above.Zero = length(which(p$H1 > 0))/n) %>% 
+  mutate_if(is.numeric, funs(round(., digits = 2))) 
+df_hyp
+```
+<br>
+
+##### Model 2: Outcome Variable = Positive Affect 
+<br>
+
+Test the hypothesis: does the slope representing the relationship between between participants' number of stressors and mean positive affect differ from zero for 1) students without many friends at school (-1.5 SD), 2) students with many  friends at school (+1.5 SD)?<br>
+
+Test the hypothesis for those with few close friends first.<br>
+
+```{r, message = F, warning = F}
+my_hyp_lw <- hypothesis(f2, "1*covid_stress_self_nr_c +
+                      -14.884*baseline_closest_deg_out_norm_c:covid_stress_self_nr_c = 0")
+p <- my_hyp_lw$samples
+df_hyp <- my_hyp_lw$hypothesis[ ,2:5] %>% 
+  mutate(Prop.Below.Zero = length(which(p$H1 < 0))/n) %>% 
+  mutate_if(is.numeric, funs(round(., digits = 2))) 
+df_hyp
+```
+<br>
+
+Test the hypothesis for those with many close friends next.<br>
+
+```{r, message = F, warning = F}
+my_hyp_up <- hypothesis(f2, "1*covid_stress_self_nr_c +
+                      +14.884*baseline_closest_deg_out_norm_c:covid_stress_self_nr_c = 0")
+p <- my_hyp_up$samples
+df_hyp <- my_hyp_up$hypothesis[ ,2:5] %>% 
+  mutate(Prop.Below.Zero = length(which(p$H1 < 0))/n) %>% 
+  mutate_if(is.numeric, funs(round(., digits = 2))) 
+df_hyp
+```
+<br>

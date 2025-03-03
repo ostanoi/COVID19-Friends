@@ -1,0 +1,381 @@
+---
+title: "Number of In-Person versus Online Interactions in Daily Life During COVID-19 ~ Close Out-Degree"
+author: "Ovidia Stanoi"
+date: "2025-02-26"
+output: html_document
+---
+
+### Prepare data for regression analyses. 
+<br>
+
+Remove all data from the global environment.<br>
+
+```{r, message = F, warning = F}
+remove(list=ls()) 
+```
+<br>
+
+Load libraries.<br>
+
+```{r, message = F, warning = F}
+library("tidyverse")
+library("rstanarm")
+library("sjPlot")
+library("brms")
+library("ggpubr")
+```
+<br>
+
+Define directory path.<br>
+
+```{r, message = F, warning = F}
+path <- "~/Dropbox/Psychology_Projects/Close Relations, Affect & Stress During the COVID19 Pandemic"
+```
+<br>
+
+Open dataset.<br>
+
+```{r, message = F, warning = F}
+covid_ema <- read.csv(sprintf("%s/Data/all_data_merged_clean.csv", path)) 
+```
+<br>
+
+See the distribution of the two outcome variables: number of in-person and online interactions.<br>
+
+##### Number of In-Person Interactions
+<br>
+
+```{r, message = F, warning = F}
+g1 <- ggplot(covid_ema, aes(PhysInt_NUM)) +
+  geom_histogram(fill = "deepskyblue2", color = "deepskyblue4", 
+                 alpha = .8, binwidth = 1) + 
+  labs(x = "In-Person Interactions",
+       y = "Count") +
+  geom_vline(xintercept = median(covid_ema$PhysInt_NUM, na.rm = T), 
+             color = "red", linewidth = 1.2) +
+  geom_vline(xintercept = mean(covid_ema$PhysInt_NUM, na.rm = T), 
+             color = "red", linewidth = 1.2, linetype = "dashed") +
+  scale_x_continuous(breaks=seq(0,9,3))+
+  theme_bw() +
+  theme(axis.text=element_text(size=18),
+        plot.title = element_text(size=22, hjust = .5),
+        axis.title=element_text(size=20),
+        axis.line = element_line(colour = "gray"),
+        panel.border = element_blank()) 
+g1
+```
+<br>
+
+##### Number of Online Interactions
+<br>
+
+```{r, message = F, warning = F}
+g2 <- ggplot(covid_ema, aes(SocInt_NUM)) +
+  geom_histogram(fill = "deepskyblue2", color = "deepskyblue4", 
+                 alpha = .8, binwidth = 1) + 
+  labs(x = "Online Interactions",
+       y = "") +
+  geom_vline(xintercept = median(covid_ema$SocInt_NUM, na.rm = T), 
+             color = "red", linewidth = 1.2) +
+  geom_vline(xintercept = mean(covid_ema$SocInt_NUM, na.rm = T), 
+             color = "red", linewidth = 1.2, linetype = "dashed") +
+  scale_x_continuous(breaks=seq(0,12,3))+
+  theme_bw() +
+  theme(axis.text=element_text(size=18),
+        plot.title = element_text(size=22, hjust = .5),
+        axis.title=element_text(size=20),
+        axis.line = element_line(colour = "gray"),
+        panel.border = element_blank()) 
+g2
+```
+<br>
+
+Save both figures in one figure with two panels. <br>
+
+```{r, message = F, warning = F}
+g <- ggarrange(g1, g2, ncol = 2,
+               labels = c("A.","B."))
+ggsave(file=sprintf("%s/Figures/2.a.Nr-InPerson-Online-Interactions_Histogram-Plots.pdf", 
+                    path), g, units="in", width=12, height=7, dpi=300)
+```
+
+Run Kolmogorov-Smirnov test to check whether variable representing the number of in-person interactions is normally distributed.<br>
+
+```{r, message = F, warning = F}
+t_inperson <- ks.test(covid_ema$PhysInt_NUM, "pnorm")
+t_inperson
+```
+<br>
+
+Run Kolmogorov-Smirnov test to check whether variable representing the number of online interactions is normally distributed.<br>
+
+```{r, message = F, warning = F}
+t_online <- ks.test(covid_ema$SocInt_NUM, "pnorm")
+t_online
+```
+<br>
+
+Extract for each participant their median number of in-person and online interactions during the EMA period, as well as their number of close friend prior to the COVID-19 pandemic, their baseline demographic information, COVID-19 living conditions, number of stressors, and EMA completion rates. All these variables will be added in the regression model.<br>
+
+```{r, message = F, warning = F}
+df <- covid_ema %>%
+  group_by(pID) %>%
+  dplyr::summarise(groupID = unique(groupID), 
+                   median_PhysInt_NUM = median(PhysInt_NUM, na.rm = T),
+                   median_SocInt_NUM = median(SocInt_NUM, na.rm = T),
+                   baseline_closest_deg_out_norm = unique(baseline_closest_deg_out_norm),
+                   baseline_income_num = unique(baseline_income_num),
+                   baseline_educ_parents_years = unique(baseline_educ_parents_years),
+                   baseline_college_year = unique(baseline_college_year),
+                   baseline_gender_numeric = unique(baseline_gender_numeric),
+                   covid_housing_tension = unique(covid_housing_tension),
+                   covid_phys_dist = unique(covid_phys_dist_avg), 
+                   EMA_completion_rate = unique(EMA_completion_rate))
+```
+<br>
+
+Center continuous predictors around the sample mean and binary variables around zero.<br>
+
+```{r, message = F, warning = F}
+df$baseline_closest_deg_out_norm_c <- df$baseline_closest_deg_out_norm - mean(df$baseline_closest_deg_out_norm, na.rm = T)
+df$baseline_income_num_c <- df$baseline_income_num - mean(df$baseline_income_num, na.rm = T)
+df$baseline_educ_parents_years_c <- df$baseline_educ_parents_years - mean(df$baseline_educ_parents_years, na.rm = T)
+df$baseline_college_year_c <- df$baseline_college_year - mean(df$baseline_college_year, na.rm = T)
+df$baseline_gender_numeric_c <- df$baseline_gender_numeric - .5
+df$covid_housing_tension_c <- df$covid_housing_tension - mean(df$covid_housing_tension, na.rm = T)
+df$covid_phys_dist_c  <- df$covid_phys_dist - mean(df$covid_phys_dist, na.rm = T)
+df$EMA_completion_rate_c  <- df$EMA_completion_rate - mean(df$EMA_completion_rate, na.rm = T)
+```
+<br>
+
+### Run regression models
+<br>
+
+##### Model 1: Outcome Variable = Median Number of In-Person Interactions
+<br>
+
+**RQ**: Do people with more close friends in college have more interactions in-person on a typical day during the COVID-19 pandemic?<br>
+
+Run regression analysis 1: median number of in-person interactions ~ close out-degree.<br>
+
+```{r}
+options(mc.cores = parallel::detectCores())
+fa <- stan_glmer(median_PhysInt_NUM ~ baseline_closest_deg_out_norm_c +
+                   baseline_income_num_c + baseline_educ_parents_years_c + baseline_college_year_c +
+                   baseline_gender_numeric_c + covid_housing_tension_c + covid_phys_dist_c + 
+                   EMA_completion_rate_c + (1 | groupID),
+                 data = df, seed = 123)
+save(fa, file = sprintf("%s/Models/2.a.Nr-InPerson_Interactions_Out-Degree.RData", path))
+```
+<br>
+
+##### Model 2: Outcome Variable = Median Number of Online Interactions
+<br>
+
+**RQ**: Do people with more close friends in college have more online interactions on a typical day during the COVID-19 pandemic?<br>
+
+Run regression analysis 1: median number of online interactions ~ close out-degree.<br>
+
+```{r}
+options(mc.cores = parallel::detectCores())
+fb <- stan_glmer(median_SocInt_NUM ~ baseline_closest_deg_out_norm_c +
+                   baseline_income_num_c + baseline_educ_parents_years_c + baseline_college_year_c +
+                   baseline_gender_numeric_c + covid_housing_tension_c + covid_phys_dist_c + 
+                   EMA_completion_rate_c + (1 | groupID),
+                 data = df, seed = 123)
+save(fb, file = sprintf("%s/Models/2.a.Nr-Online_Interactions_Out-Degree.RData", path))
+```
+<br>
+
+### Summarize results
+<br>
+
+Create a table that presents the parameter estimates from the two models together.<br>
+
+```{r, message = F, warning = F}
+tab_model(fa, fb, show.se = TRUE,
+          show.r2 = TRUE, 
+          dv.labels = c("Median Number of In-Person Interactions",
+                        "Median Number of Online Interactions"),
+          pred.labels = c("(Intercept)", 
+                          "Close Out-Degree Prior to COVID19",
+                          "HH Income",
+                          "Parents' Education",
+                          "Year in College",
+                          "Female",
+                          "HH Tension",
+                          "Physical Distance",
+                          "EMA Completion Rate"),
+          file = sprintf("%s/Tables/2.a. Nr-InPerson-Online_Interactions_Out-Degree.html", path))
+```
+<br>
+
+Below, extract the proportion of the posterior distribution that is above or below zero for each predictor of interest separately for the two regression model (median number of in-person and online interactions).<br>
+<br>
+
+##### Model 1: Outcome Variable = Median Number of In-Person Interactions
+<br>
+
+Extract the posterior distributions of the parameter estimates from the first regression model.<br>
+
+```{r, message = F, warning = F}
+posterior <- as.data.frame(as.matrix(fa))
+```
+<br>
+
+Extract the number of individual points included in a posterior distribution.<br>
+
+```{r, message = F, warning = F}
+n <- length(posterior$baseline_closest_deg_out_norm_c)
+n
+```
+<br>
+
+Calculate the proportion of the posterior distribution that is higher than 0 for the main effect of close out-degree on the median number of in-person interactions.<br>
+
+```{r, message = F, warning = F}
+round(length(which(posterior$baseline_closest_deg_out_norm_c > 0))/n*100,1)
+```
+<br>
+
+Calculate the total $R^2$ for the model.<br>
+
+```{r, message = F, warning = F}
+round(mean(bayes_R2(fa)),2)
+```
+<br>
+
+##### Model 2: Outcome Variable = Median Number of Online Interactions
+<br>
+
+Extract the posterior distributions of the parameter estimates from the first regression model.<br>
+
+```{r, message = F, warning = F}
+posterior <- as.data.frame(as.matrix(fb))
+```
+<br>
+
+Extract the number of individual points included in a posterior distribution.<br>
+
+```{r, message = F, warning = F}
+n <- length(posterior$baseline_closest_deg_out_norm_c)
+n
+```
+<br>
+
+Calculate the proportion of the posterior distribution that is higher than 0 for the main effect of close out-degree on the median number of online interactions.<br>
+
+```{r, message = F, warning = F}
+round(length(which(posterior$baseline_closest_deg_out_norm_c > 0))/n*100,1)
+```
+<br>
+
+Calculate the total $R^2$ for the model.<br>
+
+```{r, message = F, warning = F}
+round(mean(bayes_R2(fb)),2)
+```
+<br>
+
+### Plot results
+<br>
+
+##### Model 1: Outcome Variable = Median Number of In-Person Interactions
+<br>
+
+Create a scatterplot of the relationship between participants' close out-degree and their median number of in-person interactions.<br>
+
+```{r, message = F, warning = F}
+# Extract all posterior distributions
+p <- posterior_samples(fa)[, c(1:2)] 
+colnames(p) <- c("intercept", "baseline_closest_deg_out_norm_c")
+p <- p %>%
+  dplyr::mutate(draw = 1:4000,
+                m_int = median(intercept), # Extract fixed effects medians from the model
+                m_b_close_deg_out = median(baseline_closest_deg_out_norm_c)) 
+
+# Define number of posterior draws
+nr_random_draws <- 4000
+
+# Add predicted y values for the random draws and fixed effects
+p2 <- p[rep(seq_len(nrow(p)), each = 57), ] %>%
+  mutate(seq = rep(-15:41, nr_random_draws)) %>%
+  rowwise() %>%
+  dplyr::mutate(y_draw = intercept + baseline_closest_deg_out_norm_c * seq,
+                y_fe = m_int + m_b_close_deg_out * seq)
+
+## Plot results
+ggplot(data = df, aes(baseline_closest_deg_out_norm_c, median_PhysInt_NUM)) +
+  geom_jitter(alpha = .15, width = 3, height = .05, size = 5) +
+  theme_bw() +
+  theme(axis.text=element_text(size=18),
+        axis.title=element_text(size=20),
+        axis.line = element_line(colour = "gray"),
+        panel.border = element_rect(colour = "gray"),
+        strip.text = element_text(size=16)) +
+  labs(y = "Median Number of In-Person Interactions", 
+       x = "Close Out-Degree (Mean-Centered)", color = "C") +
+  scale_y_continuous(breaks = c(0,5,10)) +
+  geom_line(data = p2, aes(x = seq, y= y_draw, 
+                           group = draw), 
+            color = "#2D004B",
+            alpha = .6, linewidth = .1) +
+  geom_line(data = p2, aes(x = seq, y = y_fe),
+            color = "#810F7C", linewidth = 2) +
+  annotate(geom="text", x=26.5, y=8.8, size = 5, 
+           label="b = -0.00, 95% CI = [-0.02, 0.02],\n47.7% of posterior distribution > 0",
+           color="#2D004B") 
+ggsave(file=sprintf("%s/Figures/2.a. Nr-InPerson_Interactions_Out-Degree.pdf", path),
+       units="in", width=8, height=6, dpi=300)
+```
+<br>
+
+##### Model 2: Outcome Variable = Median Number of Online Interactions
+<br>
+
+Create a scatterplot of the relationship between participants' close out-degree and their median number of online interactions.<br>
+
+```{r, message = F, warning = F}
+# Extract all posterior distributions
+p <- posterior_samples(fb)[, c(1:2)] 
+colnames(p) <- c("intercept", "baseline_closest_deg_out_norm_c")
+p <- p %>%
+  dplyr::mutate(draw = 1:4000,
+                m_int = median(intercept), # Extract fixed effects medians from the model
+                m_b_close_deg_out = median(baseline_closest_deg_out_norm_c)) 
+
+# Define number of posterior draws
+nr_random_draws <- 4000
+
+# Add predicted y values for the random draws and fixed effects
+p2 <- p[rep(seq_len(nrow(p)), each = 57), ] %>%
+  mutate(seq = rep(-15:41, nr_random_draws)) %>%
+  rowwise() %>%
+  dplyr::mutate(y_draw = intercept + baseline_closest_deg_out_norm_c * seq,
+                y_fe = m_int + m_b_close_deg_out * seq)
+
+## Plot results
+ggplot(data = df, aes(baseline_closest_deg_out_norm_c, median_SocInt_NUM)) +
+  geom_jitter(alpha = .15, width = 3, height = .05, size = 5) +
+  theme_bw() +
+  theme(axis.text=element_text(size=18),
+        axis.title=element_text(size=20),
+        axis.line = element_line(colour = "gray"),
+        panel.border = element_rect(colour = "gray"),
+        strip.text = element_text(size=16)) +
+  labs(y = "Median Number of Online Interactions", 
+       x = "Close Out-Degree (Mean-Centered)", color = "C") +
+  geom_line(data = p2, aes(x = seq, y= y_draw, 
+                                    group = draw), 
+                     color = "#2D004B",
+                     alpha = .6, linewidth = .1) +
+  geom_line(data = p2, aes(x = seq, y = y_fe),
+            color = "#810F7C", linewidth = 2) +
+  annotate(geom="text", x=27.2, y=13.8, size = 5, 
+           label="b = 0.02, 95% CI = [-0.02, 0.06],\n80.2% of posterior distribution > 0",
+           color="#2D004B") 
+ggsave(file=sprintf("%s/Figures/2.a. Nr-Online_Interactions_Out-Degree.pdf", path),
+       units="in", width=8, height=6, dpi=300)
+```
+<br>
+

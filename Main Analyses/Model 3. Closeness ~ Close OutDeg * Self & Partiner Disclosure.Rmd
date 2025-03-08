@@ -1,0 +1,734 @@
+---
+title: "Closeness ~ Close Out-Degree * Personal Disclosure"
+author: "Ovidia Stanoi"
+date: "2025-02-26"
+output: html_document
+---
+
+### Prepare data for regression analyses. 
+<br>
+
+Remove all data from the global environment.<br>
+
+```{r, message = F, warning = F}
+remove(list=ls()) 
+```
+<br>
+
+Load libraries.<br>
+
+```{r, message = F, warning = F}
+library("tidyverse")
+library("rstanarm")
+library("sjPlot")
+library("brms")
+library("bmlm")
+```
+<br>
+
+Specify your directory path below.<br>
+
+```{r, message = F, warning = F}
+path <- ""
+```
+<br>
+
+Open dataset.<br>
+
+```{r, message = F, warning = F}
+covid_ema <- read.csv(sprintf("%s/Data/all_data_merged_clean.csv", path)) 
+```
+<br>
+
+See the distribution of the outcome variable: closeness at the end of the interaction.<br>
+
+```{r, message = F, warning = F}
+ggplot(covid_ema, aes(SalInt_Close)) +
+  geom_histogram(fill = "deepskyblue2", color = "deepskyblue4", alpha = .8) + 
+  labs(x = "Closeness",
+       y = "Count") +
+  geom_vline(xintercept = median(covid_ema$SalInt_Close, na.rm = T), 
+             color = "red", linewidth = 1.2) +
+  geom_vline(xintercept = mean(covid_ema$SalInt_Close, na.rm = T), 
+             color = "red", linewidth = 1.2, linetype = "dashed") +
+  lims(x = c(0,100)) +
+  theme_bw() +
+  theme(axis.text=element_text(size=16),
+        plot.title = element_text(size=18, hjust = .5),
+        axis.title=element_text(size=18),
+        axis.line = element_line(colour = "gray"),
+        panel.border = element_blank()) 
+```
+<br>
+
+Center the continuous predictors that represent between-individual differences around the sample mean; center binary variables around zero.<br>
+
+```{r, message = F, warning = F}
+# Extract for each participant their close out-degree, demographic information, and COVID-19 information
+df <- covid_ema %>%
+  group_by(pID) %>%
+  dplyr::summarise(baseline_closest_deg_out_norm = unique(baseline_closest_deg_out_norm),
+                   baseline_income_num = unique(baseline_income_num),
+                   baseline_educ_parents_years = unique(baseline_educ_parents_years),
+                   baseline_college_year = unique(baseline_college_year),
+                   baseline_gender_numeric = unique(baseline_gender_numeric),
+                   covid_housing_tension = unique(covid_housing_tension),
+                   covid_phys_dist = unique(covid_phys_dist_avg))
+
+# Mean center variables
+df$baseline_closest_deg_out_norm_c <- df$baseline_closest_deg_out_norm - mean(df$baseline_closest_deg_out_norm, na.rm = T)
+df$baseline_income_num_c <- df$baseline_income_num - mean(df$baseline_income_num, na.rm = T)
+df$baseline_educ_parents_years_c <- df$baseline_educ_parents_years - mean(df$baseline_educ_parents_years, na.rm = T)
+df$baseline_college_year_c <- df$baseline_college_year - mean(df$baseline_college_year, na.rm = T)
+df$baseline_gender_numeric_c <- df$baseline_gender_numeric - .5
+df$covid_housing_tension_c <- df$covid_housing_tension - mean(df$covid_housing_tension, na.rm = T)
+df$covid_phys_dist_c  <- df$covid_phys_dist - mean(df$covid_phys_dist, na.rm = T)
+
+# Add centered variables to the EMA dataset
+covid_ema <- merge(covid_ema, df)
+```
+<br>
+
+Separate the predictor(s) that vary both between- and within-individual in their within and between components.<br> 
+
+```{r, message = F, warning = F}
+covid_ema <- isolate(d = covid_ema, by = "pID", 
+                     value = c("SalInt_Disc_Self", "SalInt_Disc_Partner",
+                               "SalInt_Medium_Online", "SalInt_Disc_Tension", 
+                               "SalInt_Partner_Close"), 
+                     which = "both")
+```
+<br>
+
+### Run multilevel regression models
+<br>
+
+##### Model 1: Predictor Variable = Self-Disclosure
+<br>
+
+**RQ**: Do people feel closer to their interaction partners when they disclose something personal? Is the relationship between self-disclosure and closeness mediated by one's number of close friends?<br>
+
+Run regression analysis 1: closeness ~ close out-degree * self-disclosure (within component).<br>
+
+```{r}
+options(mc.cores = parallel::detectCores())
+fit1 <- stan_glmer(SalInt_Close ~ SalInt_Disc_Self_cw * baseline_closest_deg_out_norm_c +
+                     SalInt_Medium_Online_cw + SalInt_Disc_Tension_cw  +
+                     SalInt_Partner_Close_cw + baseline_income_num_c +
+                     baseline_educ_parents_years_c + baseline_college_year_c +
+                     baseline_gender_numeric_c + covid_housing_tension_c +
+                     covid_phys_dist_c + (SalInt_Disc_Self_cw | groupID:pID),
+                    data = covid_ema, seed = 123)
+save(fit1, file = sprintf("%s/Models/3.Closeness_Out-Degree_Self-Disclose.RData", path))
+```
+<br>
+
+##### Model 2: Predictor Variable = Partner-Disclosure
+<br>
+
+**RQ**: Do people feel closer to their interaction partners when the interactions partners disclose something personal? Is the relationship between partner-disclosure and closeness mediated by one's number of close friends?<br>
+
+Run regression analysis 1: closeness ~ close out-degree * self-disclosure (within component).<br>
+
+```{r}
+options(mc.cores = parallel::detectCores())
+fit2 <- stan_glmer(SalInt_Close ~ SalInt_Disc_Partner_cw * baseline_closest_deg_out_norm_c +
+                     SalInt_Medium_Online_cw + SalInt_Disc_Tension_cw  +
+                     SalInt_Partner_Close_cw + baseline_income_num_c +
+                     baseline_educ_parents_years_c + baseline_college_year_c +
+                     baseline_gender_numeric_c + covid_housing_tension_c +
+                     covid_phys_dist_c + (SalInt_Disc_Partner_cw | groupID:pID),
+                    data = covid_ema, seed = 123)
+save(fit1, file = sprintf("%s/Models/3.Closeness_Out-Degree_Partner-Disclose.RData", path))
+```
+<br>
+
+### Summarize results
+<br>
+
+Create a table that presents the parameter estimates from the two models together.<br>
+
+```{r}
+tab_model(fit1, fit2, show.se = TRUE,
+          show.r2 = TRUE, 
+          dv.labels = c("Closeness",
+                        "Closeness"),
+          pred.labels = c("(Intercept)", 
+                          "Self-Sharing (WI)",
+                          "Close Out-Degree Prior to COVID19",
+                          "Online Conversation (WI)",
+                          "Tension (WI)",
+                          "Close Partner (WI)",
+                          "HH Income",
+                          "Parents' Education",
+                          "Year in College",
+                          "Female",
+                          "HH Tension",
+                          "Physical Distance",
+                          "Out-Degree * Self-Sharing (WI) Interaction",
+                          "Partner-Sharing (WI)",
+                          "Out-Degree * Partner-Sharing (WI) Interaction"),
+          file = sprintf("%s/Tables/3.Closeness_Out-Degree_Self-Partner-Disclose.html", path))
+```
+
+Below, extract the proportion of the posterior distribution that is above or below zero for each predictor of interest separately for the two regression models.<br>
+<br>
+
+##### Model 1: Predictor Variable = Self-Disclosure 
+<br>
+
+Extract the posterior distributions of the parameters from the first regression model.<br>
+
+```{r, message = F, warning = F}
+posterior <- as.data.frame(as.matrix(fit1))
+```
+<br>
+
+Extract the number of individual points included in a posterior distribution.<br>
+
+```{r, message = F, warning = F}
+n <- length(posterior$baseline_closest_deg_out_norm_c)
+n
+```
+<br>
+
+Calculate the proportion of the posterior distribution that is higher than 0 for the main effect of close out-degree on closeness.<br>
+
+```{r, message = F, warning = F}
+round(length(which(posterior$baseline_closest_deg_out_norm_c > 0))/n*100,1)
+```
+<br>
+
+Calculate the proportion of the posterior distribution that is higher than 0 for the main effect of self-disclosure on closeness.<br> 
+
+```{r, message = F, warning = F}
+round(length(which(posterior$SalInt_Disc_Self_cw > 0))/n*100,1)
+```
+<br>
+
+Calculate the proportion of the posterior distribution that is lower than 0 for the interaction effect between participants' close out-degree and self-disclosures on closeness.<br> 
+
+```{r, message = F, warning = F}
+length(which(posterior$`SalInt_Disc_Self_cw:baseline_closest_deg_out_norm_c` < 0))/n*100
+```
+<br>
+
+Calculate the total $R^2$ for the model.<br>
+
+```{r, message = F, warning = F}
+round(mean(bayes_R2(fit1)),2)
+```
+<br>
+
+##### Model 2: Predictor Variable = Partner-Disclosure
+<br>
+
+Extract the posterior distributions of the parameters from the second regression model.<br>
+
+```{r, message = F, warning = F}
+posterior <- as.data.frame(as.matrix(fit2))
+```
+<br>
+
+Extract the number of individual points included in a posterior distribution.<br>
+
+```{r, message = F, warning = F}
+n <- length(posterior$baseline_closest_deg_out_norm_c)
+n
+```
+<br>
+
+Calculate the proportion of the posterior distribution that is higher than 0 for the main effect of close out-degree on closeness.<br>
+
+```{r, message = F, warning = F}
+round(length(which(posterior$baseline_closest_deg_out_norm_c > 0))/n*100,1)
+```
+<br>
+
+Calculate the proportion of the posterior distribution that is higher than 0 for the main effect of partner-disclosures on closeness.<br> 
+
+```{r, message = F, warning = F}
+round(length(which(posterior$SalInt_Disc_Partner_cw > 0))/n*100,1)
+```
+<br>
+
+Calculate the proportion of the posterior distribution that is lower than 0 for the interaction effect between participants' close out-degree and partner-disclosures on closeness.<br> 
+
+```{r, message = F, warning = F}
+round(length(which(posterior$`SalInt_Disc_Partner_cw:baseline_closest_deg_out_norm_c` < 0))/n*100,1)
+```
+<br>
+
+Calculate the total $R^2$ for the model.<br>
+
+```{r, message = F, warning = F}
+round(mean(bayes_R2(fit2)),2)
+```
+<br>
+
+### General Linear Hypothesis Tests (GLHT)
+<br>
+
+##### Model 1: Predictor Variable = Self-Disclosure
+<br>
+
+Test the hypothesis: does the slope representing the relationship between self-disclosure and closeness differ from zero for 1) students with few friends at school (1.5 SD below mean), 2) students with many friends at school (1.5 SD above mean)?<br>
+
+```{r, message = F, warning = F}
+# Calculate mean close out-degree  +/-1.5SD
+lw_1.5sd <- round(-1.5*sd(df$baseline_closest_deg_out_norm_c, na.rm = T),3)
+lw_1.5sd
+
+up_1.5sd <- round(+1.5*sd(df$baseline_closest_deg_out_norm_c, na.rm = T),3)
+up_1.5sd
+
+# Define the number of draws from the posterior distribution
+n <- 4000
+```
+<br>
+
+Test the hypothesis for those with few close friends first.<br>
+
+```{r, message = F, warning = F}
+my_hyp_lw <- hypothesis(fit1, "1*SalInt_Disc_Self_cw +
+                      -14.884*SalInt_Disc_Self_cw:baseline_closest_deg_out_norm_c = 0")
+p <- my_hyp_lw$samples
+df_hyp <- my_hyp_lw$hypothesis[ ,2:5] %>% 
+  mutate(Prop.Above.Zero = length(which(p$H1 > 0))/n) %>% 
+  mutate_if(is.numeric, funs(round(., digits = 2))) 
+df_hyp
+```
+<br>
+
+Test the hypothesis for those with many close friends next.<br>
+
+```{r, message = F, warning = F}
+my_hyp_up <- hypothesis(fit1, "1*SalInt_Disc_Self_cw +
+                      14.884*SalInt_Disc_Self_cw:baseline_closest_deg_out_norm_c = 0")
+p <- my_hyp_up$samples
+df_hyp <- my_hyp_up$hypothesis[ ,2:5] %>% 
+  mutate(Prop.Above.Zero = length(which(p$H1 > 0))/n) %>% 
+  mutate_if(is.numeric, funs(round(., digits = 2))) 
+df_hyp
+```
+<br>
+
+
+##### Model 2: Predictor Variable = Partner-Disclosure
+<br>
+
+Test the hypothesis: does the slope representing the relationship between partner-disclosure and closeness differ from zero for 1) students with few friends at school (1.5 SD below mean), 2) students with many friends at school (1.5 SD above mean)?<br>
+
+```{r, message = F, warning = F}
+# Calculate mean close out-degree  +/-1.5SD
+lw_1.5sd <- round(-1.5*sd(df$baseline_closest_deg_out_norm_c, na.rm = T),3)
+lw_1.5sd
+
+up_1.5sd <- round(+1.5*sd(df$baseline_closest_deg_out_norm_c, na.rm = T),3)
+up_1.5sd
+
+# Define the number of draws from the posterior distribution
+n <- 4000
+```
+<br>
+
+Test the hypothesis for those with few close friends first.<br>
+
+```{r, message = F, warning = F}
+my_hyp_lw <- hypothesis(fit2, "1*SalInt_Disc_Partner_cw +
+                      -14.884*SalInt_Disc_Partner_cw:baseline_closest_deg_out_norm_c = 0")
+p <- my_hyp_lw$samples
+df_hyp <- my_hyp_lw$hypothesis[ ,2:5] %>% 
+  mutate(Prop.Above.Zero = length(which(p$H1 > 0))/n) %>% 
+  mutate_if(is.numeric, funs(round(., digits = 2))) 
+df_hyp
+```
+<br>
+
+Test the hypothesis for those with many close friends.<br>
+
+```{r, message = F, warning = F}
+my_hyp_up <- hypothesis(fit2, "1*SalInt_Disc_Partner_cw +
+                      14.884*SalInt_Disc_Partner_cw:baseline_closest_deg_out_norm_c = 0")
+p <- my_hyp_up$samples
+df_hyp <- my_hyp_up$hypothesis[ ,2:5] %>% 
+  mutate(Prop.Above.Zero = length(which(p$H1 > 0))/n) %>% 
+  mutate_if(is.numeric, funs(round(., digits = 2))) 
+df_hyp
+```
+<br>
+
+### Plot results
+<br>
+
+##### Model 1: Predictor Variable = Self-Disclosure
+<br>
+
+Create a scatterplot showing the relationship between self-disclosures in interactions and closeness at the end of the interaction for people with few (1.5 SD below mean) or many (1.5 SD above mean) close friends in college.<br>
+
+```{r, message = F, warning = F}
+# Extract all posterior distributions
+p <- posterior_samples(fit1)[, c(1:3,13)] 
+colnames(p) <- c("intercept", "b_self_disc", "b_close_deg_out", "b_self_disc_close_deg_out_int")
+
+# Define the number of random draws
+n <- 4000
+
+p <- p %>%
+  dplyr::mutate(draw = 1:n,
+                m_int = median(intercept), # Extract fixed effects medians from the model
+                m_b_self_disc = median(b_self_disc),  
+                m_b_close_deg_out = median(b_close_deg_out), 
+                m_b_self_disc_close_deg_out_int = median(b_self_disc_close_deg_out_int)) 
+
+# Create a dataframe that includes predicted y values for each draw for students without a lot of friends
+p_lw <- p[rep(seq_len(nrow(p)), each = 2), ] %>%
+  dplyr::mutate(seq = rep(c(-.5,.5), n),
+                close_deg_out = lw_1.5sd,
+                close_deg_out_label = "Low (-1.5 SD)") %>%
+  rowwise() %>%
+  dplyr::mutate(y_draw = intercept + b_self_disc * seq + b_close_deg_out * close_deg_out +
+                  b_self_disc_close_deg_out_int * close_deg_out * seq,
+                y_fe = m_int + m_b_self_disc * seq + m_b_close_deg_out * close_deg_out +
+                  m_b_self_disc_close_deg_out_int * close_deg_out * seq)
+
+# Create a dataframe that includes predicted y values for each draw for students with a lot of friends
+p_up <- p[rep(seq_len(nrow(p)), each = 2), ] %>%
+  mutate(seq = rep(c(-.5,.5), n),
+         close_deg_out = up_1.5sd,
+         close_deg_out_label = "High (+ 1.5 SD)") %>%
+  rowwise() %>%
+  dplyr::mutate(y_draw = intercept + b_self_disc * seq + b_close_deg_out * close_deg_out +
+                  b_self_disc_close_deg_out_int * close_deg_out * seq,
+                y_fe = m_int + m_b_self_disc * seq + m_b_close_deg_out * close_deg_out +
+                  m_b_self_disc_close_deg_out_int * close_deg_out * seq)
+
+# Merge files
+p_all <- rbind(p_lw, p_up) 
+
+# Make the grouping variable a factor
+p_all$close_deg_out_label <- factor(p_all$close_deg_out_label, 
+                                    levels = c("Low (-1.5 SD)",
+                                               "High (+ 1.5 SD)"))
+
+# Stagger position on the x-axis
+p_up$seq2 <- ifelse(p_up$seq == -.5, -0.3, 
+                    ifelse(p_up$seq == .5, .7, NA))
+
+# Separate the covid_ema dataset in two subsets: one including the data of the people with a lot of friends, 
+# one including the data of the people without a lot of friends
+covid_ema_lw <- covid_ema[covid_ema$baseline_closest_deg_out_norm_c < median(covid_ema$baseline_closest_deg_out_norm_c, na.rm = T),]
+covid_ema_lw$SalInt_Disc_Self_2 <- ifelse(covid_ema_lw$SalInt_Disc_Self == 1, .5,
+                                              ifelse(covid_ema_lw$SalInt_Disc_Self == 0, -.5, NA))
+
+covid_ema_up <- covid_ema[covid_ema$baseline_closest_deg_out_norm_c < median(covid_ema$baseline_closest_deg_out_norm_c, na.rm = T),]
+covid_ema_up$SalInt_Disc_Self_2 <- ifelse(covid_ema_up$SalInt_Disc_Self == 1, .7,
+                                              ifelse(covid_ema_up$SalInt_Disc_Self == 0, -.3, NA))
+
+# Plot results -- together
+ggplot() +
+  geom_jitter(data = covid_ema_lw, aes(x = SalInt_Disc_Self_2, 
+                                       y = NegativeMood),
+              width = .04, alpha = .02, size = 4) +
+  geom_jitter(data = covid_ema_up, aes(x = SalInt_Disc_Self_2, 
+                                       y = NegativeMood),
+              width = .04, alpha = .02, size = 4) +
+  geom_point(data = p_lw, aes(x = seq, y= y_draw, 
+                              group = draw), 
+             color = "#810F7C", alpha = .5, size = 4) +
+  geom_point(data = p_lw, aes(x = seq, y = y_fe),
+             color = "#810F7C", size = 12) +
+  geom_point(data = p_up, aes(x = seq2, y= y_draw, 
+                              group = draw),
+             color = "#2D004B", alpha = .5, size = 4) +
+  geom_point(data = p_up, aes(x = seq2, 
+                              y = y_fe), 
+             color = "#2D004B", size = 12) +
+  labs(y = "Closeness at the End of the Interaction", 
+       x = "Self-Sharing (WI)") +
+  scale_y_continuous(breaks = c(0,20,40,60,80,100)) +
+  scale_x_continuous(breaks = c(-.4, .6), 
+                     labels = c("No", "Yes")) +
+  theme_bw() +
+  theme(axis.text=element_text(size=20),
+        axis.title=element_text(size=22),
+        axis.line = element_line(colour = "gray"),
+        panel.border = element_rect(colour = "gray"),
+        strip.text = element_text(size=16)) 
+ggsave(file=sprintf("%s/Figures/3. Closeness_Out-Degree_Self-Disclose.pdf", path),
+       units="in", width=8, height=6, dpi=300)
+```
+<br>
+
+##### Model 2: Predictor Variable = Partner-Disclosure
+<br>
+
+Create a scatterplot showing the relationship between partner-disclosures in interactions and closeness at the end of the interaction for people with few (1.5 SD below mean) or many (1.5 SD above mean) close friends in college.<br>
+
+```{r, message = F, warning = F}
+# Extract all posterior distributions
+p <- posterior_samples(fit2)[, c(1:3,13)] 
+colnames(p) <- c("intercept", "b_partner_disc", "b_close_deg_out", "b_partner_disc_close_deg_out_int")
+
+# Define the number of random draws
+n <- 4000
+
+p <- p %>%
+  dplyr::mutate(draw = 1:n,
+                m_int = median(intercept), # Extract fixed effects medians from the model
+                m_b_partner_disc = median(b_partner_disc),  
+                m_b_close_deg_out = median(b_close_deg_out), 
+                m_b_partner_disc_close_deg_out_int = median(b_partner_disc_close_deg_out_int)) 
+
+# Calculate  +/-1.5SD
+lw_1.5sd <- round(mean(covid_ema$baseline_closest_deg_out_norm_c)-
+                    1.5*sd(covid_ema$baseline_closest_deg_out_norm_c),2)
+up_1.5sd <- round(mean(covid_ema$baseline_closest_deg_out_norm_c)+
+                    1.5*sd(covid_ema$baseline_closest_deg_out_norm_c),2)
+
+# Create a dataframe that includes predicted y values for each draw for students without a lot of friends
+p_lw <- p[rep(seq_len(nrow(p)), each = 2), ] %>%
+  dplyr::mutate(seq = rep(c(-.5,.5), n),
+                close_deg_out = lw_1.5sd,
+                close_deg_out_label = "Low (-1.5 SD)") %>%
+  rowwise() %>%
+  dplyr::mutate(y_draw = intercept + b_partner_disc * seq + b_close_deg_out * close_deg_out +
+                  b_partner_disc_close_deg_out_int * close_deg_out * seq,
+                y_fe = m_int + m_b_partner_disc * seq + m_b_close_deg_out * close_deg_out +
+                  m_b_partner_disc_close_deg_out_int * close_deg_out * seq)
+
+# Create a dataframe that includes predicted y values for each draw for students with a lot of friends
+p_up <- p[rep(seq_len(nrow(p)), each = 2), ] %>%
+  mutate(seq = rep(c(-.5,.5), n),
+         close_deg_out = up_1.5sd,
+         close_deg_out_label = "High (+ 1.5 SD)") %>%
+  rowwise() %>%
+  dplyr::mutate(y_draw = intercept + b_partner_disc * seq + b_close_deg_out * close_deg_out +
+                  b_partner_disc_close_deg_out_int * close_deg_out * seq,
+                y_fe = m_int + m_b_partner_disc * seq + m_b_close_deg_out * close_deg_out +
+                  m_b_partner_disc_close_deg_out_int * close_deg_out * seq)
+
+# Merge files
+p_all <- rbind(p_lw, p_up) 
+
+# Make the grouping variable a factor
+p_all$close_deg_out_label <- factor(p_all$close_deg_out_label, 
+                                    levels = c("Low (-1.5 SD)",
+                                               "High (+ 1.5 SD)"))
+
+# Stagger position on the x-axis
+p_up$seq2 <- ifelse(p_up$seq == -.5, -0.3, 
+                    ifelse(p_up$seq == .5, .7, NA))
+
+# Separate the covid_ema dataset in two subsets: one including the data of the people with a lot of friends, 
+# one including the data of the people without a lot of friends
+covid_ema_lw <- covid_ema[covid_ema$baseline_closest_deg_out_norm_c < median(covid_ema$baseline_closest_deg_out_norm_c, na.rm = T),]
+covid_ema_lw$SalInt_Disc_Partner_2 <- ifelse(covid_ema_lw$SalInt_Disc_Partner == 1, .5,
+                                          ifelse(covid_ema_lw$SalInt_Disc_Partner == 0, -.5, NA))
+
+covid_ema_up <- covid_ema[covid_ema$baseline_closest_deg_out_norm_c < median(covid_ema$baseline_closest_deg_out_norm_c, na.rm = T),]
+covid_ema_up$SalInt_Disc_Partner_2 <- ifelse(covid_ema_up$SalInt_Disc_Partner == 1, .7,
+                                          ifelse(covid_ema_up$SalInt_Disc_Partner == 0, -.3, NA))
+
+# Plot results -- together
+ggplot() +
+  geom_jitter(data = covid_ema_lw, aes(x = SalInt_Disc_Partner_2, 
+                                       y = NegativeMood),
+              width = .04, alpha = .02, size = 4) +
+  geom_jitter(data = covid_ema_up, aes(x = SalInt_Disc_Partner_2, 
+                                       y = NegativeMood),
+              width = .04, alpha = .02, size = 4) +
+  geom_point(data = p_lw, aes(x = seq, y= y_draw, 
+                              group = draw), 
+             color = "#810F7C", alpha = .5, size = 4) +
+  geom_point(data = p_lw, aes(x = seq, y = y_fe),
+             color = "#810F7C", size = 12) +
+  geom_point(data = p_up, aes(x = seq2, y= y_draw, 
+                              group = draw),
+             color = "#2D004B", alpha = .5, size = 4) +
+  geom_point(data = p_up, aes(x = seq2, 
+                              y = y_fe), 
+             color = "#2D004B", size = 12) +
+  labs(y = "Closeness at the End of the Interaction", 
+       x = "Partner-Sharing (WI)") +
+  scale_y_continuous(breaks = c(0,20,40,60,80,100)) +
+  scale_x_continuous(breaks = c(-.4, .6), 
+                     labels = c("No", "Yes")) +
+  theme_bw() +
+  theme(axis.text=element_text(size=20),
+        axis.title=element_text(size=22),
+        axis.line = element_line(colour = "gray"),
+        panel.border = element_rect(colour = "gray"),
+        strip.text = element_text(size=16)) 
+ggsave(file=sprintf("%s/Figures/3. Closeness_Out-Degree_Partner-Disclose.pdf", path),
+       units="in", width=8, height=6, dpi=300)
+```
+<br>
+
+### Extract Random Intercepts & Slopes
+<br>
+
+##### Model 1: Predictor Variable = Self-Disclosure
+<br>
+
+Extract the random effects from the model.<br>
+
+```{r, message = F, warning = F}
+ranef <- ranef(fit1)$`groupID:pID` %>%
+  mutate(pID = row.names(.),
+                pID = str_remove(pID, "g\\d+c:"),
+                pID = str_remove(pID, "g\\d+p:")) %>%
+  rename(intercept_ref = `(Intercept)`, 
+         slope_ref = SalInt_Disc_Self_cw)
+```
+<br>
+
+Extract the fixed effects from the model.<br>
+
+```{r, message = F, warning = F}
+fixef <- data.frame(pID = ranef$pID) %>%
+  mutate(intercept_fef = fixef(fit1)[1],
+         slope_fef = fixef(fit1)[2]) 
+```
+<br>
+
+Calculate the final participant-level effects.<br>
+
+```{r, message = F, warning = F}
+ef <- merge(ranef, fixef) %>%
+  rowwise() %>%
+  mutate(p_intercept = sum(c(intercept_ref, intercept_fef)), 
+         p_slope = sum(c(slope_ref, slope_fef))) %>%
+  select(pID, p_intercept, p_slope) %>%
+  arrange(p_slope) 
+```
+<br>
+
+Check the mean and standard deviation of the person-level intercepts.<br>
+
+```{r, message = F, warning = F}
+round(mean(ef$p_intercept),2)
+round(sd(ef$p_intercept),2)
+```
+<br>
+
+Check the mean and standard deviation of the person-level slopes.<br>
+
+```{r, message = F, warning = F}
+round(mean(ef$p_slope),2)
+round(sd(ef$p_slope),2)
+```
+<br>
+
+Plot the histogram of the person-level slopes.<br>
+
+```{r, message = F, warning = F}
+ggplot(ef, aes(p_slope)) +
+  geom_histogram(fill = "#810F7C", 
+                 color = "#2D004B", alpha = .6,
+                 binwidth = 1) + 
+  labs(x = "Person-Level Effects of Self-Sharing (WI)",
+       y = "Count") +
+  scale_x_continuous(breaks = c(0,4,8,12,16,20,24)) +
+  expand_limits(x=c(0, 24)) +
+  scale_y_continuous(breaks = c(0,20,40,60)) +
+  geom_vline(xintercept = 0, linetype = "dashed",
+             color = "red", linewidth = 1.2) +
+  theme_bw() +
+  theme(axis.text=element_text(size=20),
+        axis.title=element_text(size=22),
+        axis.line = element_line(colour = "gray"),
+        panel.border = element_rect(colour = "gray"),
+        strip.text = element_text(size=16)) 
+ggsave(file=sprintf("%s/Figures/3. Closeness_Self-Disclose_Person-Level-Effects.pdf", path),
+       units="in", width=8, height=6, dpi=300)
+```
+<br>
+
+What percentage of the slopes is higher than zero?<br>
+```{r, message = F, warning = F}
+length(which(ef$p_slope>0))/205*100
+```
+<br>
+
+##### Model 2: Predictor Variable = Partner-Disclosure
+<br>
+
+Extract the random effects from the model.<br>
+
+```{r, message = F, warning = F}
+ranef <- ranef(fit2)$`groupID:pID` %>%
+  mutate(pID = row.names(.),
+                pID = str_remove(pID, "g\\d+c:"),
+                pID = str_remove(pID, "g\\d+p:")) %>%
+  rename(intercept_ref = `(Intercept)`, 
+         slope_ref = SalInt_Disc_Partner_cw)
+```
+<br>
+
+Extract the fixed effects from the model.<br>
+
+```{r, message = F, warning = F}
+fixef <- data.frame(pID = ranef$pID) %>%
+  mutate(intercept_fef = fixef(fit2)[1],
+         slope_fef = fixef(fit2)[2]) 
+```
+<br>
+
+Calculate the final participant-level effects.<br>
+
+```{r, message = F, warning = F}
+ef <- merge(ranef, fixef) %>%
+  rowwise() %>%
+  mutate(p_intercept = sum(c(intercept_ref, intercept_fef)), 
+         p_slope = sum(c(slope_ref, slope_fef))) %>%
+  select(pID, p_intercept, p_slope) %>%
+  arrange(p_slope) 
+```
+<br>
+
+Check the mean and standard deviation of the person-level intercepts.<br>
+
+```{r, message = F, warning = F}
+round(mean(ef$p_intercept),2)
+round(sd(ef$p_intercept),2)
+```
+<br>
+
+Check the mean and standard deviation of the person-level slopes.<br>
+
+```{r, message = F, warning = F}
+round(mean(ef$p_slope),2)
+round(sd(ef$p_slope),2)
+```
+<br>
+
+Plot the histogram of the person-level slopes.<br>
+
+```{r, message = F, warning = F}
+ggplot(ef, aes(p_slope)) +
+  geom_histogram(fill = "#810F7C", 
+                 color = "#2D004B", alpha = .6,
+                 binwidth = 1) + 
+  labs(x = "Person-Level Effects of Partner-Sharing (WI)",
+       y = "Count") +
+  scale_x_continuous(breaks = c(0,4,8,12,16,20,24)) +
+  expand_limits(x=c(0, 24)) +
+  scale_y_continuous(breaks = c(0,10,20,40,60)) +
+  geom_vline(xintercept = 0, linetype = "dashed",
+             color = "red", linewidth = 1.2) +
+  theme_bw() +
+  theme(axis.text=element_text(size=20),
+        axis.title=element_text(size=22),
+        axis.line = element_line(colour = "gray"),
+        panel.border = element_rect(colour = "gray"),
+        strip.text = element_text(size=16)) 
+ggsave(file=sprintf("%s/Figures/3. Closeness_Partner-Disclose_Person-Level-Effects.pdf", path),
+       units="in", width=8, height=6, dpi=300)
+```
+<br>
+
+What percentage of the slopes is higher than zero?<br>
+```{r, message = F, warning = F}
+length(which(ef$p_slope>0))/205*100
+```

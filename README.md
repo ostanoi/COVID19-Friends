@@ -1,1 +1,1 @@
-This repository contains scripts and de-identified data to reproduce the main analyses presented in the "Staying Connected: How Close Friendships Supported Emotional Well-being During the COVID-19 Pandemic" manuscript.
+This repository contains scripts to reproduce the regression analyses presented in the "Staying Connected: How Close Friendships Supported Emotional Well-being During the COVID-19 Pandemic" manuscript.
